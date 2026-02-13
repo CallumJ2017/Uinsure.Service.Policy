@@ -1,0 +1,18 @@
+# Build Folders
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build results
+*.dll
+*.exe
+
+# OS Files
+.DS_Store
+Thumbs.db
