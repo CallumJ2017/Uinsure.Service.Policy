@@ -1,3 +1,12 @@
 <Solution>
-  <Project Path="Api/Api.csproj" />
+  <Folder Name="/src/">
+    <Project Path="Api/Api.csproj" />
+    <Project Path="Application/Application.csproj" />
+    <Project Path="Domain/Domain.csproj" />
+    <Project Path="SharedKernel/SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="AcceptanceTests/AcceptanceTests.csproj" />
+    <Project Path="UnitTests/UnitTests.csproj" />
+  </Folder>
 </Solution>
