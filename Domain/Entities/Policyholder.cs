@@ -8,6 +8,8 @@ public sealed class Policyholder : Entity<Guid>
     public string LastName { get; private set; }
     public DateOnly DateOfBirth { get; private set; }
 
+    protected Policyholder() { }
+
     public Policyholder(string firstName, string lastName, DateOnly dateOfBirth) : base(Guid.NewGuid())
     {
         Guard.AgainstNullOrEmpty(firstName, "policy.invalid_name", "First name is required.");
@@ -19,8 +21,16 @@ public sealed class Policyholder : Entity<Guid>
         DateOfBirth = dateOfBirth;
     }
 
-    public static Policyholder Create(string firstName, string lastName, DateOnly dateOfBirth)
-        => new(firstName, lastName, dateOfBirth);
+    public static Result<Policyholder> Create(string firstName, string lastName, DateOnly dateOfBirth)
+    {
+        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+            return Result<Policyholder>.Fail("policyholder.invalid_name", "First and last names are required.");
+
+        if (dateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow))
+            return Result<Policyholder>.Fail("policyholder.invalid_dob", "Date of birth cannot be in the future.");
+
+        return Result<Policyholder>.Success(new Policyholder(firstName, lastName, dateOfBirth));
+    }
 
     public int AgeAtPolicyStartDate(DateOnly policyStartDate)
     {

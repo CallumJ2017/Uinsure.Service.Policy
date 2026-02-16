@@ -1,22 +1,47 @@
+using Api.Extensions;
+using Application;
+using Asp.Versioning;
+using Infrastructure.EntityFramework;
+using Microsoft.OpenApi;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Configuration.SetBasePath(Path.Combine(Directory.GetCurrentDirectory(), "Configuration"));
+builder.Configuration.AddJsonFile("ConnectionStrings.json");
 
+builder.Services.AddEntityFramworkInfrastructure(builder.Configuration);
+builder.Services.AddApplicationServices();
+
+builder.Services.AddFluentValidation();
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Uinsure.Service.Policy",
+        Version = "v1.0",
+        Description = "API for Policy Management.",
+    });
+});
+
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+})
+.AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
+
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.MapControllers();
 

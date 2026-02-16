@@ -2,11 +2,19 @@
   <Folder Name="/src/">
     <Project Path="Api/Api.csproj" />
     <Project Path="Application/Application.csproj" />
+    <Project Path="Database/Database.sqlproj" Id="9cc721ae-5003-4a7a-bf52-40da2528b9b4">
+      <Build />
+      <Deploy />
+    </Project>
     <Project Path="Domain/Domain.csproj" />
+    <Project Path="Infrastructure.EntityFramework/Infrastructure.EntityFramework.csproj" Id="9a58fd4c-efde-4307-9b7d-2238d6634f37" />
     <Project Path="SharedKernel/SharedKernel.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="AcceptanceTests/AcceptanceTests.csproj" />
     <Project Path="UnitTests/UnitTests.csproj" />
   </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
 </Solution>

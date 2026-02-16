@@ -15,13 +15,15 @@ public sealed class Policy : AggregateRoot<Guid>
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 
-    public string Reference { get; private set; }
+    public PolicyReference Reference { get; private set; }
     public HomeInsuranceType InsuranceType { get; private set; }
+    public PolicyStatus Status { get; private set; }
     public Property InsuredProperty { get; private set; }
     public DateOnly StartDate { get; private set; }
     public DateOnly EndDate { get; private set; }
     public Money Premium { get; private set; }
     public bool AutoRenew { get; private set; }
+    public bool HasClaims { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset LastModifiedAt { get; private set; }
 
@@ -29,64 +31,89 @@ public sealed class Policy : AggregateRoot<Guid>
     private readonly List<Policyholder> _policyholders = new();
     public IReadOnlyCollection<Policyholder> PolicyHolders => _policyholders.AsReadOnly();
 
-
-    private readonly List<Payment> _payments = new();
-    public IReadOnlyCollection<Payment> Payments => _payments.AsReadOnly();
-
-
-    private readonly List<Claim> _claims = new();
-    public IReadOnlyCollection<Claim> Claims => _claims.AsReadOnly();
-
-
-    public bool HasClaims => _claims.Count > 0;
+    // Required by EF Core
+    private Policy() { }
 
     internal Policy(
-        string reference,
+        PolicyReference policyReference,
         DateOnly startDate,
         Money amount,
         Property property,
         bool autoRenew,
-        IEnumerable<Policyholder> policyHolders) : base(id: Guid.NewGuid())
+        bool hasClaims) : base(id: Guid.NewGuid())
     {
-        Guard.AgainstNullOrEmpty(reference, "policy.invalid_reference", "Policy reference is required.");
+        Guard.AgainstNull(policyReference, "policy.invalid_reference", "Policy reference is required.");
         Guard.AgainstDefault(startDate, "policy.invalid_start_date", "Start date is required.");
         Guard.AgainstNull(amount, "policy.invalid_amount", "Policy amount is required.");
-        Guard.AgainstNull(property, "policy.invalid_property", "Policy must have property to insure.");
-        Guard.AgainstNull(policyHolders, "policy.invalid_policyholders", "Policy must have policyholders.");
 
-        Reference = reference;
+        Reference = policyReference;
         StartDate = startDate;
         EndDate = startDate.AddYears(PolicyLengthInYears);
         Premium = amount;
         InsuredProperty = property;
         AutoRenew = autoRenew;
+        HasClaims = hasClaims;
+        Status = PolicyStatus.Draft;
         CreatedAt = DateTimeOffset.UtcNow;
-
-        _policyholders.AddRange(policyHolders);
     }
 
-    /// <summary>
-    /// Factory method to enforce business rules before creating the policy.
-    /// </summary>
     public static Result<Policy> CreateNew(
-        string reference,
+        HomeInsuranceType type,
         DateOnly startDate,
         Money premium,
-        Property property,
-        bool autoRenew,
-        IEnumerable<Policyholder> policyHolders)
+        string addressLine1,
+        string postcode,
+        bool autoRenew)
     {
         if (startDate > Today.AddDays(MaxAdvanceSaleDays))
             return Result<Policy>.Fail("policy.start.toofar", $"A policy can only be sold up to {MaxAdvanceSaleDays} days in advance.");
 
-        var numberOfPolicyHolders = policyHolders?.Count() ?? 0;
+        var propertyResult = Property.Create(addressLine1, postcode);
+        if (!propertyResult.IsSuccess)
+            return Result<Policy>.Fail(propertyResult.Error.Code, propertyResult.Error.Message);
 
-        if (numberOfPolicyHolders < MinimumNumberOfPolicyholders || numberOfPolicyHolders > MaximumNumberOfPolicyholders)
-            return Result<Policy>.Fail("policy.policyholders.count", $"A policy must have at least {MinimumNumberOfPolicyholders} policyholder but no more than {MaximumNumberOfPolicyholders}.");
+        var policyReference = PolicyReference.Generate(type);
 
-        if (policyHolders!.Any(x => x.AgeAtPolicyStartDate(startDate) < MinimumPolicyholderAge))
-            return Result<Policy>.Fail("policy.policyholders.minimum_age", $"All policyholders must meet the minimum age requirement of: {MinimumPolicyholderAge} at the start date of the policy.");
+        return Result<Policy>.Success(new Policy(policyReference, startDate, premium, propertyResult.Value!, autoRenew, false));
+    }
 
-        return Result<Policy>.Success(new Policy(reference, startDate, premium, property, autoRenew, policyHolders!));
+    public Result Purchase()
+    {
+        if (Status != PolicyStatus.Draft)
+            return Result.Fail("policy.invalid_state", "Only draft policies can be purchased.");
+
+        if (_policyholders.Count < MinimumNumberOfPolicyholders)
+            return Result.Fail("policy.policyholders.required", $"At least {MinimumNumberOfPolicyholders} policyholder is required.");
+
+        if (InsuredProperty is null)
+            return Result.Fail("policy.property.required", "An insured property is required before purchasing.");
+
+        Status = PolicyStatus.Active;
+        LastModifiedAt = DateTimeOffset.UtcNow;
+
+        return Result.Success();
+    }
+
+    public Result<Policyholder> AddPolicyHolder(string firstName, string lastName, DateOnly dateOfBirth)
+    {
+        if (Status != PolicyStatus.Draft)
+            return Result<Policyholder>.Fail("policy.locked", "Policyholders can only be added while policy is in Draft.");
+
+        var policyholderResult = Policyholder.Create(firstName, lastName, dateOfBirth);
+
+        if (!policyholderResult.IsSuccess)
+            return policyholderResult;
+
+        var policyholder = policyholderResult.Value!;
+
+        if (_policyholders.Count + 1 > MaximumNumberOfPolicyholders)
+            return Result<Policyholder>.Fail("policy.policyholders.max_count", $"Cannot have more than {MaximumNumberOfPolicyholders} policyholders.");
+
+        if (policyholder.AgeAtPolicyStartDate(StartDate) < MinimumPolicyholderAge)
+            return Result<Policyholder>.Fail("policy.policyholders.minimum_age", $"Policyholder must be at least {MinimumPolicyholderAge} years old at the policy start date.");
+
+        _policyholders.Add(policyholder);
+
+        return Result<Policyholder>.Success(policyholder);
     }
 }

@@ -4,6 +4,8 @@ public abstract class Entity<TId> where TId : notnull
 {
     public TId Id { get; protected init; }
 
+    protected Entity() { }
+
     protected Entity(TId id)
     {
         Id = id ?? throw new ArgumentNullException(nameof(id));

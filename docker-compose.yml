@@ -1,0 +1,56 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    environment:
+      SA_PASSWORD: "Your_strong_password123!"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    networks:
+      - sqlnetwork
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/1433'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: sqlserver-init
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./init-db:/init-db
+    entrypoint:
+      [
+        "bash",
+        "-c",
+        "/opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P Your_strong_password123! -i /init-db/init.sql"
+      ]
+    networks:
+      - sqlnetwork
+
+  api:
+    build:
+      context: .
+      dockerfile: Api/Dockerfile
+      args:
+        - WEB_PROJECT_NAME=Api
+    container_name: policy-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__PolicyDatabase: "Server=sqlserver,1433;Database=Policy;User Id=sa;Password=Your_strong_password123!;TrustServerCertificate=True;"
+    depends_on:
+      sqlserver-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:80"
+    networks:
+      - sqlnetwork
+
+networks:
+  sqlnetwork:
+    driver: bridge

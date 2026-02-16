@@ -1,0 +1,20 @@
+{
+  "profiles": {
+    "Docker Compose": {
+      "commandName": "DockerCompose",
+      "commandVersion": "1.0",
+      "serviceActions": {
+        "api": "StartDebugging",
+        "sqlserver": "StartWithoutDebugging"
+      }
+    },
+    "Docker Compose Without Debugging": {
+      "commandName": "DockerCompose",
+      "commandVersion": "1.0",
+      "serviceActions": {
+        "api": "StartWithoutDebugging",
+        "sqlserver": "StartWithoutDebugging"
+      }
+    }
+  }
+}

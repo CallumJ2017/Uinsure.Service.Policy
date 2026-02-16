@@ -1,0 +1,5 @@
+{
+  "ConnectionStrings": {
+    "PolicyDatabase": "Server=sqlserver,1433;Database=Policy;User Id=sa;Password=Your_strong_password123!;TrustServerCertificate=True;"
+  }
+}

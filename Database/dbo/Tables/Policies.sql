@@ -1,0 +1,12 @@
+﻿CREATE TABLE [dbo].[Policies]
+(
+    Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    Reference NVARCHAR(50) NOT NULL,
+    StartDate DATE NOT NULL,
+    EndDate DATE NOT NULL,
+    AutoRenew BIT NOT NULL,
+    PremiumValue DECIMAL(18,2) NOT NULL,
+    PremiumCurrency NVARCHAR(3) NOT NULL,
+    CreatedAt DATETIMEOFFSET NOT NULL,
+    LastModifiedAt DATETIMEOFFSET NULL
+)

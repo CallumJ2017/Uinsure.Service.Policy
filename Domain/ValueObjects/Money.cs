@@ -7,6 +7,8 @@ public sealed class Money : ValueObject
     public decimal Value { get; }
     public string Currency { get; }
 
+    protected Money() { }
+
     internal Money(decimal value, string currency = "GBP")
     {
         Guard.AgainstNegative(value, "policy.invalid_amount", "Value must be greater than 0.");
