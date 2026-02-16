@@ -37,7 +37,19 @@ public class PolicySalesService : IPolicySalesService
                 return Result<SellPolicyResponseDto>.Fail(policyHolderResult.Error.Code, policyHolderResult.Error.Message);
         }
 
-        policy.Purchase();
+        if (request.Payment is not null)
+        {
+            if (!Enum.TryParse<PaymentMethod>(request.Payment.PaymentMethod, ignoreCase: true, out var paymentMethod))
+                return Result<SellPolicyResponseDto>.Fail("payment.invalid_type", "Payment type is invalid.");
+
+            var paymentResult = policy.AddPayment(request.Payment.Reference, paymentMethod, request.Payment.Amount);
+            if (!paymentResult.IsSuccess)
+                return Result<SellPolicyResponseDto>.Fail(paymentResult.Error.Code, paymentResult.Error.Message);
+        }
+
+        var purchaseResult = policy.Purchase();
+        if (!purchaseResult.IsSuccess)
+            return Result<SellPolicyResponseDto>.Fail(purchaseResult.Error.Code, purchaseResult.Error.Message);
 
         await _policyRepository.Add(policy);
         await _policyRepository.SaveChangesAsync();

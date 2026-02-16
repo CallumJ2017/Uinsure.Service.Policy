@@ -173,6 +173,7 @@ public class PolicyAggregateTests
     {
         var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
         policy.AddPolicyHolder("John", "Doe", DobAtLeastAge(_validStartDate, 25)).IsSuccess.Should().BeTrue();
+        policy.AddPayment("PAY-PURCHASE-001", PaymentMethod.Card, 10m).IsSuccess.Should().BeTrue();
 
         var purchase = policy.Purchase();
 
@@ -186,6 +187,7 @@ public class PolicyAggregateTests
     {
         var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
         policy.AddPolicyHolder("John", "Doe", DobAtLeastAge(_validStartDate, 25)).IsSuccess.Should().BeTrue();
+        policy.AddPayment("PAY-PURCHASE-002", PaymentMethod.Card, 10m).IsSuccess.Should().BeTrue();
         policy.Purchase().IsSuccess.Should().BeTrue();
 
         var secondPurchase = policy.Purchase();
@@ -199,9 +201,63 @@ public class PolicyAggregateTests
     {
         var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
         policy.AddPolicyHolder("John", "Doe", DobAtLeastAge(_validStartDate, 25)).IsSuccess.Should().BeTrue();
+        policy.AddPayment("PAY-PURCHASE-003", PaymentMethod.Card, 10m).IsSuccess.Should().BeTrue();
         policy.Purchase().IsSuccess.Should().BeTrue();
 
         var result = policy.AddPolicyHolder("Jane", "Doe", DobAtLeastAge(_validStartDate, 30));
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.locked");
+    }
+
+    [Fact]
+    public void AddPayment_ShouldAdd_WhenValidAndDraft()
+    {
+        var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
+
+        var result = policy.AddPayment("PAY-123", PaymentMethod.Card, 99.99m);
+
+        result.IsSuccess.Should().BeTrue();
+        policy.Payments.Should().HaveCount(1);
+        policy.Payments.Single().Reference.Should().Be("PAY-123");
+        policy.Payments.Single().Type.Should().Be(PaymentMethod.Card);
+        policy.Payments.Single().Amount.Should().Be(99.99m);
+    }
+
+    [Fact]
+    public void AddPayment_ShouldFail_WhenReferenceIsEmpty()
+    {
+        var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
+
+        var result = policy.AddPayment(string.Empty, PaymentMethod.DirectDebit, 42m);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("payment.invalid_reference");
+    }
+
+    [Fact]
+    public void AddPayment_ShouldFail_WhenAmountIsZeroOrNegative()
+    {
+        var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
+
+        var zeroAmount = policy.AddPayment("PAY-001", PaymentMethod.Cheque, 0m);
+        var negativeAmount = policy.AddPayment("PAY-002", PaymentMethod.Cheque, -1m);
+
+        zeroAmount.IsSuccess.Should().BeFalse();
+        zeroAmount.Error!.Code.Should().Be("payment.invalid_amount");
+        negativeAmount.IsSuccess.Should().BeFalse();
+        negativeAmount.Error!.Code.Should().Be("payment.invalid_amount");
+    }
+
+    [Fact]
+    public void AddPayment_ShouldFail_WhenPolicyIsNotDraft()
+    {
+        var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
+        policy.AddPolicyHolder("John", "Doe", DobAtLeastAge(_validStartDate, 25)).IsSuccess.Should().BeTrue();
+        policy.AddPayment("PAY-PURCHASE-004", PaymentMethod.Card, 10m).IsSuccess.Should().BeTrue();
+        policy.Purchase().IsSuccess.Should().BeTrue();
+
+        var result = policy.AddPayment("PAY-123", PaymentMethod.Card, 10m);
 
         result.IsSuccess.Should().BeFalse();
         result.Error!.Code.Should().Be("policy.locked");

@@ -29,12 +29,16 @@ public sealed class Policy : AggregateRoot<Guid>
 
 
     private readonly List<Policyholder> _policyholders = new();
-    public IReadOnlyCollection<Policyholder> PolicyHolders => _policyholders.AsReadOnly();
+    public IReadOnlyCollection<Policyholder> PolicyHolders => _policyholders;
+
+    private readonly List<Payment> _payments = new();
+    public IReadOnlyCollection<Payment> Payments => _payments;
 
     // Required by EF Core
     private Policy() { }
 
     internal Policy(
+        HomeInsuranceType insuranceType,
         PolicyReference policyReference,
         DateOnly startDate,
         Money amount,
@@ -46,6 +50,7 @@ public sealed class Policy : AggregateRoot<Guid>
         Guard.AgainstDefault(startDate, "policy.invalid_start_date", "Start date is required.");
         Guard.AgainstNull(amount, "policy.invalid_amount", "Policy amount is required.");
 
+        InsuranceType = insuranceType;
         Reference = policyReference;
         StartDate = startDate;
         EndDate = startDate.AddYears(PolicyLengthInYears);
@@ -74,7 +79,7 @@ public sealed class Policy : AggregateRoot<Guid>
 
         var policyReference = PolicyReference.Generate(type);
 
-        return Result<Policy>.Success(new Policy(policyReference, startDate, premium, propertyResult.Value!, autoRenew, false));
+        return Result<Policy>.Success(new Policy(type, policyReference, startDate, premium, propertyResult.Value!, autoRenew, false));
     }
 
     public Result Purchase()
@@ -87,6 +92,9 @@ public sealed class Policy : AggregateRoot<Guid>
 
         if (InsuredProperty is null)
             return Result.Fail("policy.property.required", "An insured property is required before purchasing.");
+
+        if (_payments.Count == 0)
+            return Result.Fail("policy.payment.required", "A payment is required to purchase..");
 
         Status = PolicyStatus.Active;
         LastModifiedAt = DateTimeOffset.UtcNow;
@@ -115,5 +123,20 @@ public sealed class Policy : AggregateRoot<Guid>
         _policyholders.Add(policyholder);
 
         return Result<Policyholder>.Success(policyholder);
+    }
+
+    public Result<Payment> AddPayment(string reference, PaymentMethod type, decimal amount)
+    {
+        if (Status != PolicyStatus.Draft)
+            return Result<Payment>.Fail("policy.locked", "Payments can only be added while policy is in Draft.");
+
+        var paymentResult = Payment.Create(reference, type, amount);
+        if (!paymentResult.IsSuccess)
+            return paymentResult;
+
+        var payment = paymentResult.Value!;
+        _payments.Add(payment);
+
+        return Result<Payment>.Success(payment);
     }
 }

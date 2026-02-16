@@ -19,7 +19,7 @@ GO
 CREATE TABLE Policies (
     Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
 
-    Reference NVARCHAR(50) NOT NULL,
+    Reference NVARCHAR(50) NOT NULL CONSTRAINT UQ_Policies_Reference UNIQUE,
     InsuranceType INT NOT NULL,
     Status INT NOT NULL,
 
@@ -85,11 +85,35 @@ CREATE TABLE Policyholders (
 );
 GO
 
+/* ===========================
+   PAYMENTS (1:M with Policy)
+   =========================== */
+
+IF OBJECT_ID('dbo.Payments', 'U') IS NOT NULL
+    DROP TABLE dbo.Payments;
+GO
+
+CREATE TABLE Payments (
+    Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    PolicyId UNIQUEIDENTIFIER NOT NULL,
+
+    Reference NVARCHAR(50) NOT NULL,
+    Type INT NOT NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+
+    CONSTRAINT FK_Payments_Policies
+        FOREIGN KEY (PolicyId)
+        REFERENCES Policies(Id)
+        ON DELETE CASCADE
+);
+GO
+
 
 /* ===========================
    Indexes
    =========================== */
 
 CREATE INDEX IX_Policyholders_PolicyId ON Policyholders(PolicyId);
+CREATE INDEX IX_Payments_PolicyId ON Payments(PolicyId);
 CREATE UNIQUE INDEX IX_Properties_PolicyId ON Properties(PolicyId);
 GO

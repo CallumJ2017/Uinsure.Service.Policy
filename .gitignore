@@ -16,3 +16,8 @@ publish/
 # OS Files
 .DS_Store
 Thumbs.db
+
+*.dbmdl
+*.jfm
+/Database/Database.jfm
+/Database/Database.dbmdl

@@ -1,5 +1,6 @@
 ﻿using Domain.Aggregates;
 using Domain.Repository;
+using Domain.ValueObjects;
 using Infrastructure.EntityFramework.Context;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,9 +20,13 @@ public class PolicyRepository : IPolicyRepository
         _context.Policies.Add(policy);
     }
 
-    public async Task<Policy?> GetByIdAsync(Guid policyId)
+    public async Task<Policy?> GetByReferenceAsync(PolicyReference policyReference)
     {
-        return await _context.Policies.FirstOrDefaultAsync(x => x.Id == policyId);
+        return await _context.Policies
+            .Include(x => x.InsuredProperty)
+            .Include(x => x.PolicyHolders)
+            .Include(x => x.Payments)
+            .FirstOrDefaultAsync(x => x.Reference == policyReference);
     }
 
     public async Task SaveChangesAsync()

@@ -1,5 +1,6 @@
-﻿using Application.Dtos.Response;
+using Application.Dtos.Response;
 using Application.Models.Request;
+using Application.Services.GetPolicy;
 using Application.Services.SellPolicy;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
@@ -14,13 +15,16 @@ public class PolicyController : ControllerBase
 {
     private readonly IValidator<SellPolicyRequestDto> _sellPolicyRequestDtoValidator;
     private readonly IPolicySalesService _policySalesService;
+    private readonly IPolicyRetrievalService _policyRetrievalService;
 
     public PolicyController(
         IValidator<SellPolicyRequestDto> sellPolicyRequestDtoValidator,
-        IPolicySalesService policySalesService)
+        IPolicySalesService policySalesService,
+        IPolicyRetrievalService policyRetrievalService)
     {
         _sellPolicyRequestDtoValidator = sellPolicyRequestDtoValidator;
         _policySalesService = policySalesService;
+        _policyRetrievalService = policyRetrievalService;
     }
 
     [HttpPost]
@@ -42,6 +46,20 @@ public class PolicyController : ControllerBase
             // This keeps the HttpStatus codes out of the application.
             return BadRequest(policyResult);
         }
+
+        return Ok(policyResult);
+    }
+
+    [HttpGet("{policyReference}")]
+    public async Task<IActionResult> GetPolicy(string policyReference)
+    {
+        var policyResult = await _policyRetrievalService.GetPolicyAsync(policyReference);
+
+        if (!policyResult.IsSuccess && policyResult.Error?.Code == "policy.not_found")
+            return NotFound(policyResult);
+
+        if (!policyResult.IsSuccess)
+            return BadRequest(policyResult);
 
         return Ok(policyResult);
     }

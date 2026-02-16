@@ -1,7 +1,7 @@
 ﻿CREATE TABLE [dbo].[Policies]
 (
     Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-    Reference NVARCHAR(50) NOT NULL,
+    Reference NVARCHAR(50) NOT NULL CONSTRAINT UQ_Policies_Reference UNIQUE,
     StartDate DATE NOT NULL,
     EndDate DATE NOT NULL,
     AutoRenew BIT NOT NULL,

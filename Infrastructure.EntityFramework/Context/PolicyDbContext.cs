@@ -11,6 +11,7 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
     public DbSet<Policy> Policies { get; set; }
     public DbSet<Policyholder> Policyholders { get; set; }
     public DbSet<Property> Properties { get; set; }
+    public DbSet<Payment> Payments { get; set; }
 
     public PolicyDbContext(DbContextOptions<PolicyDbContext> options) : base(options) { }
 
@@ -80,6 +81,13 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
                   .WithOne()
                   .HasForeignKey("PolicyId")
                   .IsRequired();
+
+            // Payments Navigation (1:n)
+            policy.HasMany(p => p.Payments)
+                  .WithOne()
+                  .HasForeignKey("PolicyId")
+                  .IsRequired()
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Property Entity
@@ -113,6 +121,23 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
                       .HasColumnType("date")
                       .IsRequired();
             }
+        });
+
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.ToTable("Payments");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Reference)
+                  .IsRequired()
+                  .HasMaxLength(50);
+
+            entity.Property(e => e.Type)
+                  .IsRequired();
+
+            entity.Property(e => e.Amount)
+                  .HasColumnType("decimal(18,2)")
+                  .IsRequired();
         });
     }
 }
