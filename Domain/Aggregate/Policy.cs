@@ -12,6 +12,8 @@ public sealed class Policy : AggregateRoot<Guid>
     private const int MinimumNumberOfPolicyholders = 1;
     private const int MaximumNumberOfPolicyholders = 3;
     private const int MinimumPolicyholderAge = 16;
+    private const int CoolingOffPeriodDays = 14;
+    private const int RenewalWindowDays = 30;
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -138,5 +140,79 @@ public sealed class Policy : AggregateRoot<Guid>
         _payments.Add(payment);
 
         return Result<Payment>.Success(payment);
+    }
+
+    public Result<decimal> Cancel(DateOnly cancellationDate, PaymentMethod refundMethod)
+    {
+        if (Status != PolicyStatus.Active)
+            return Result<decimal>.Fail("policy.invalid_state", "Only active policies can be cancelled.");
+
+        if (_payments.Count == 0)
+            return Result<decimal>.Fail("policy.payment.required", "A payment is required before cancellation.");
+
+        var originalPaymentMethod = _payments.First().Type;
+        if (originalPaymentMethod != refundMethod)
+            return Result<decimal>.Fail("policy.refund.invalid_method", "Refund must be made to the original payment method.");
+
+        var refundAmount = CalculateRefundAmount(cancellationDate);
+
+        Status = PolicyStatus.Cancelled;
+        AutoRenew = false;
+        LastModifiedAt = DateTimeOffset.UtcNow;
+
+        return Result<decimal>.Success(refundAmount);
+    }
+
+    public Result Renew(DateOnly renewalDate, string? paymentReference, PaymentMethod? paymentMethod, decimal? paymentAmount)
+    {
+        if (Status != PolicyStatus.Active)
+            return Result.Fail("policy.invalid_state", "Only active policies can be renewed.");
+
+        if (renewalDate < EndDate.AddDays(-RenewalWindowDays))
+            return Result.Fail("policy.renewal.too_early", $"A policy can only be renewed within {RenewalWindowDays} days of the end date.");
+
+        if (renewalDate > EndDate)
+            return Result.Fail("policy.renewal.after_end_date", "A policy cannot be renewed after the end date.");
+
+        if (AutoRenew)
+        {
+            if (paymentMethod is null)
+                return Result.Fail("policy.renewal.payment.required", "A payment is required when renewing an auto-renew policy.");
+
+            if (string.IsNullOrWhiteSpace(paymentReference))
+                return Result.Fail("payment.invalid_reference", "Payment reference is required.");
+
+            if (paymentAmount is null || paymentAmount <= 0)
+                return Result.Fail("payment.invalid_amount", "Payment amount must be greater than zero.");
+
+            var paymentResult = Payment.Create(paymentReference, paymentMethod.Value, paymentAmount.Value);
+            if (!paymentResult.IsSuccess)
+                return Result.Fail(paymentResult.Error!.Code, paymentResult.Error.Message);
+
+            _payments.Add(paymentResult.Value!);
+        }
+
+        EndDate = EndDate.AddYears(1);
+        LastModifiedAt = DateTimeOffset.UtcNow;
+
+        return Result.Success();
+    }
+
+    private decimal CalculateRefundAmount(DateOnly cancellationDate)
+    {
+        if (cancellationDate < StartDate)
+            return Premium.Value;
+
+        if (cancellationDate <= StartDate.AddDays(CoolingOffPeriodDays))
+            return Premium.Value;
+
+        var totalCoverageDays = EndDate.DayNumber - StartDate.DayNumber;
+        if (totalCoverageDays <= 0)
+            return 0m;
+
+        var unusedDays = Math.Max(0, EndDate.DayNumber - cancellationDate.DayNumber);
+        var proRata = Premium.Value * unusedDays / totalCoverageDays;
+
+        return decimal.Round(proRata, 2, MidpointRounding.AwayFromZero);
     }
 }

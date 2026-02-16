@@ -14,7 +14,7 @@ public class PolicyAggregateTests
     private readonly bool _autoRenew = true;
 
     private const string AddressLine1 = "1 Test Street";
-    private const string Postcode = "AB12CD"; // <= 8 chars
+    private const string Postcode = "AB12CD";
 
     private readonly Money _validPremium = Money.Create(500m, "GBP");
 
@@ -261,5 +261,165 @@ public class PolicyAggregateTests
 
         result.IsSuccess.Should().BeFalse();
         result.Error!.Code.Should().Be("policy.locked");
+    }
+
+    [Fact]
+    public void Cancel_ShouldReturnFullRefund_WhenCancelledBeforePolicyStartDate()
+    {
+        var startDate = Today.AddDays(30);
+        var premium = Money.Create(365m);
+        var policy = CreateActivePolicy(startDate, premium, PaymentMethod.Card);
+
+        var result = policy.Cancel(startDate.AddDays(-1), PaymentMethod.Card);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(365m);
+        policy.Status.Should().Be(PolicyStatus.Cancelled);
+    }
+
+    [Fact]
+    public void Cancel_ShouldReturnFullRefund_WhenCancelledWithinCoolingOffPeriod()
+    {
+        var startDate = Today.AddDays(-5);
+        var premium = Money.Create(365m);
+        var policy = CreateActivePolicy(startDate, premium, PaymentMethod.Card);
+
+        var result = policy.Cancel(startDate.AddDays(14), PaymentMethod.Card);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(365m);
+        policy.Status.Should().Be(PolicyStatus.Cancelled);
+    }
+
+    [Fact]
+    public void Cancel_ShouldReturnProRataRefund_WhenCancelledAfterCoolingOffPeriod()
+    {
+        var startDate = Today.AddDays(-40);
+        var premium = Money.Create(365m);
+        var policy = CreateActivePolicy(startDate, premium, PaymentMethod.Card);
+        var cancellationDate = startDate.AddDays(20);
+
+        var totalCoverageDays = policy.EndDate.DayNumber - policy.StartDate.DayNumber;
+        var unusedDays = policy.EndDate.DayNumber - cancellationDate.DayNumber;
+        var expectedRefund = decimal.Round(premium.Value * unusedDays / totalCoverageDays, 2, MidpointRounding.AwayFromZero);
+
+        var result = policy.Cancel(cancellationDate, PaymentMethod.Card);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(expectedRefund);
+        result.Value.Should().BeLessThan(premium.Value);
+    }
+
+    [Fact]
+    public void Cancel_ShouldFail_WhenRefundMethodDiffersFromOriginalPaymentMethod()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-10), Money.Create(250m), PaymentMethod.Card);
+
+        var result = policy.Cancel(Today, PaymentMethod.DirectDebit);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.refund.invalid_method");
+    }
+
+    [Fact]
+    public void Cancel_ShouldFail_WhenPolicyIsNotActive()
+    {
+        var policy = Policy.CreateNew(_validType, _validStartDate, _validPremium, AddressLine1, Postcode, _autoRenew).Value!;
+
+        var result = policy.Cancel(Today, PaymentMethod.Card);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.invalid_state");
+    }
+
+    [Fact]
+    public void Cancel_ShouldFail_WhenPolicyAlreadyCancelled()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-10), Money.Create(500m), PaymentMethod.Card);
+        policy.Cancel(Today, PaymentMethod.Card).IsSuccess.Should().BeTrue();
+
+        var secondAttempt = policy.Cancel(Today, PaymentMethod.Card);
+
+        secondAttempt.IsSuccess.Should().BeFalse();
+        secondAttempt.Error!.Code.Should().Be("policy.invalid_state");
+    }
+
+    [Fact]
+    public void Renew_ShouldFail_WhenEarlierThan30DaysBeforeEndDate()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-120), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
+        var renewalDate = policy.EndDate.AddDays(-31);
+
+        var result = policy.Renew(renewalDate, "PAY-RENEW-001", PaymentMethod.Card, 10m);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.renewal.too_early");
+    }
+
+    [Fact]
+    public void Renew_ShouldFail_WhenAfterEndDate()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-400), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
+        var renewalDate = policy.EndDate.AddDays(1);
+
+        var result = policy.Renew(renewalDate, "PAY-RENEW-002", PaymentMethod.Card, 10m);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.renewal.after_end_date");
+    }
+
+    [Fact]
+    public void Renew_ShouldCreatePayment_WhenAutoRenewIsTrue()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-360), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
+        var originalEndDate = policy.EndDate;
+        var originalPaymentCount = policy.Payments.Count;
+
+        var result = policy.Renew(originalEndDate.AddDays(-10), "PAY-RENEW-003", PaymentMethod.DirectDebit, 99.99m);
+
+        result.IsSuccess.Should().BeTrue();
+        policy.EndDate.Should().Be(originalEndDate.AddYears(1));
+        policy.Payments.Should().HaveCount(originalPaymentCount + 1);
+        policy.Payments.Last().Reference.Should().Be("PAY-RENEW-003");
+        policy.Payments.Last().Type.Should().Be(PaymentMethod.DirectDebit);
+        policy.Payments.Last().Amount.Should().Be(99.99m);
+    }
+
+    [Fact]
+    public void Renew_ShouldNotCreatePayment_WhenAutoRenewIsFalse()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-360), Money.Create(365m), PaymentMethod.Card, autoRenew: false);
+        var originalEndDate = policy.EndDate;
+        var originalPaymentCount = policy.Payments.Count;
+
+        var result = policy.Renew(originalEndDate.AddDays(-10), "PAY-RENEW-004", PaymentMethod.Cheque, 55.55m);
+
+        result.IsSuccess.Should().BeTrue();
+        policy.EndDate.Should().Be(originalEndDate.AddYears(1));
+        policy.Payments.Should().HaveCount(originalPaymentCount);
+    }
+
+    [Fact]
+    public void Renew_ShouldFail_WhenAutoRenewIsTrueAndPaymentNotProvided()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-360), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
+
+        var result = policy.Renew(policy.EndDate.AddDays(-5), paymentReference: null, paymentMethod: null, paymentAmount: null);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.renewal.payment.required");
+    }
+
+    private Policy CreateActivePolicy(DateOnly startDate, Money premium, PaymentMethod paymentMethod, bool autoRenew = true)
+    {
+        var createResult = Policy.CreateNew(_validType, startDate, premium, AddressLine1, Postcode, autoRenew);
+        createResult.IsSuccess.Should().BeTrue();
+
+        var policy = createResult.Value!;
+        policy.AddPolicyHolder("John", "Doe", DobAtLeastAge(startDate, 30)).IsSuccess.Should().BeTrue();
+        policy.AddPayment("PAY-ACTIVE-001", paymentMethod, premium.Value).IsSuccess.Should().BeTrue();
+        policy.Purchase().IsSuccess.Should().BeTrue();
+
+        return policy;
     }
 }

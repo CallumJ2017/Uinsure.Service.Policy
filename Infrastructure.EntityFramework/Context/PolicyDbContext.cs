@@ -29,6 +29,8 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
             policy.ToTable("Policies");
             policy.HasKey(p => p.Id);
 
+            policy.Property(p => p.Id).ValueGeneratedNever();
+
             policy.Property(p => p.Reference)
                   .HasConversion(
                         v => v.Value,
@@ -96,6 +98,8 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
             prop.ToTable("Properties");
             prop.HasKey(p => p.Id);
 
+            prop.Property(p => p.Id).ValueGeneratedNever();
+
             prop.Property(p => p.AddressLine1).IsRequired();
             prop.Property(p => p.AddressLine2);
             prop.Property(p => p.AddressLine3);
@@ -105,37 +109,41 @@ public class PolicyDbContext : DbContext, IPolicyDbContext
         });
 
         // Policyholder Entity
-        modelBuilder.Entity<Policyholder>(entity =>
+        modelBuilder.Entity<Policyholder>(policyHolder =>
         {
-            entity.ToTable("Policyholders");
-            entity.HasKey(e => e.Id);
+            policyHolder.ToTable("Policyholders");
+            policyHolder.HasKey(e => e.Id);
 
-            entity.Property(e => e.FirstName).IsRequired();
-            entity.Property(e => e.LastName).IsRequired();
+            policyHolder.Property(p => p.Id).ValueGeneratedNever();
+
+            policyHolder.Property(e => e.FirstName).IsRequired();
+            policyHolder.Property(e => e.LastName).IsRequired();
 
             // Map DateOfBirth as date if using DateOnly
-            if (entity.Property(e => e.DateOfBirth).Metadata.ClrType == typeof(DateOnly))
+            if (policyHolder.Property(e => e.DateOfBirth).Metadata.ClrType == typeof(DateOnly))
             {
-                entity.Property(e => e.DateOfBirth)
+                policyHolder.Property(e => e.DateOfBirth)
                       .HasConversion(dateOnlyConverter)
                       .HasColumnType("date")
                       .IsRequired();
             }
         });
 
-        modelBuilder.Entity<Payment>(entity =>
+        modelBuilder.Entity<Payment>(payment =>
         {
-            entity.ToTable("Payments");
-            entity.HasKey(e => e.Id);
+            payment.ToTable("Payments");
+            payment.HasKey(e => e.Id);
 
-            entity.Property(e => e.Reference)
+            payment.Property(p => p.Id).ValueGeneratedNever();
+
+            payment.Property(e => e.Reference)
                   .IsRequired()
                   .HasMaxLength(50);
 
-            entity.Property(e => e.Type)
+            payment.Property(e => e.Type)
                   .IsRequired();
 
-            entity.Property(e => e.Amount)
+            payment.Property(e => e.Amount)
                   .HasColumnType("decimal(18,2)")
                   .IsRequired();
         });

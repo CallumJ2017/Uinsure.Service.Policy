@@ -2,15 +2,12 @@ using System.Net;
 using AcceptanceTests.Dtos;
 using AcceptanceTests.Fixtures;
 using FluentAssertions;
-using Microsoft.Data.SqlClient;
 using RestSharp;
 
 namespace AcceptanceTests.Features;
 
 public class PolicyRetrievalTests : IClassFixture<HttpClientFixture>
 {
-    private const string SqlConnectionString = "Server=localhost,1433;Database=Policy;User Id=sa;Password=Your_strong_password123!;TrustServerCertificate=True;";
-
     private readonly HttpClientFixture _httpClientFixture;
 
     public PolicyRetrievalTests(HttpClientFixture httpClientFixture)
