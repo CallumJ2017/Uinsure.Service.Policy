@@ -128,6 +128,33 @@ public class RenewPolicyTests : IClassFixture<HttpClientFixture>
         renewResponse.Data.Value!.Policy.Payments.Count.Should().Be(policyBefore.Payments.Count);
     }
 
+    [Fact]
+    public async Task When_Renewing_AutoRenewTrue_WithChequePayment_Expect_BadRequest()
+    {
+        var policyReference = await CreatePolicy(autoRenew: true);
+        await UpdatePolicyDatesAsync(policyReference, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-350));
+        var policyBefore = await GetPolicy(policyReference);
+
+        var renewRequest = new RenewPolicyRequestDto
+        {
+            RenewalDate = policyBefore.EndDate.AddDays(-5),
+            Payment = new PaymentDto
+            {
+                Reference = $"PAY-{Guid.NewGuid():N}",
+                PaymentMethod = "Cheque",
+                Amount = 100m
+            }
+        };
+
+        var renewResponse = await _httpClientFixture.Client.ExecuteAsync<Result<RenewPolicyResponseDto>>(
+            new RestRequest($"api/v1/policy/{policyReference}/renew", Method.Post).AddJsonBody(renewRequest));
+
+        renewResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        renewResponse.Data.Should().NotBeNull();
+        renewResponse.Data!.IsSuccess.Should().BeFalse();
+        renewResponse.Data.Error!.Code.Should().Be("policy.renewal.cheque_not_allowed");
+    }
+
     private async Task<string> CreatePolicy(bool autoRenew)
     {
         var requestDto = new SellPolicyRequestDto

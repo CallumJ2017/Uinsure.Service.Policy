@@ -147,20 +147,38 @@ public sealed class Policy : AggregateRoot<Guid>
         if (Status != PolicyStatus.Active)
             return Result<decimal>.Fail("policy.invalid_state", "Only active policies can be cancelled.");
 
-        if (_payments.Count == 0)
-            return Result<decimal>.Fail("policy.payment.required", "A payment is required before cancellation.");
-
-        var originalPaymentMethod = _payments.First().Type;
-        if (originalPaymentMethod != refundMethod)
-            return Result<decimal>.Fail("policy.refund.invalid_method", "Refund must be made to the original payment method.");
-
-        var refundAmount = CalculateRefundAmount(cancellationDate);
+        var refundAmountResult = CalculateRefundAmount(cancellationDate, refundMethod);
+        if (!refundAmountResult.IsSuccess)
+            return Result<decimal>.Fail(refundAmountResult.Error!.Code, refundAmountResult.Error.Message);
 
         Status = PolicyStatus.Cancelled;
         AutoRenew = false;
         LastModifiedAt = DateTimeOffset.UtcNow;
 
-        return Result<decimal>.Success(refundAmount);
+        return Result<decimal>.Success(refundAmountResult.Value);
+    }
+
+    public Result<decimal> CalculateCancellationQuote(DateOnly cancellationDate, PaymentMethod refundMethod)
+    {
+        if (Status != PolicyStatus.Active)
+            return Result<decimal>.Fail("policy.invalid_state", "Only active policies can be quoted for cancellation.");
+
+        var refundAmountResult = CalculateRefundAmount(cancellationDate, refundMethod);
+        if (!refundAmountResult.IsSuccess)
+            return Result<decimal>.Fail(refundAmountResult.Error!.Code, refundAmountResult.Error.Message);
+
+        return refundAmountResult;
+    }
+
+    public Result MarkAsClaim()
+    {
+        if (Status != PolicyStatus.Active)
+            return Result.Fail("policy.invalid_state", "Only active policies can be marked as claim.");
+
+        HasClaims = true;
+        LastModifiedAt = DateTimeOffset.UtcNow;
+
+        return Result.Success();
     }
 
     public Result Renew(DateOnly renewalDate, string? paymentReference, PaymentMethod? paymentMethod, decimal? paymentAmount)
@@ -178,6 +196,9 @@ public sealed class Policy : AggregateRoot<Guid>
         {
             if (paymentMethod is null)
                 return Result.Fail("policy.renewal.payment.required", "A payment is required when renewing an auto-renew policy.");
+
+            if (paymentMethod == PaymentMethod.Cheque)
+                return Result.Fail("policy.renewal.cheque_not_allowed", "Cheque cannot be used to pay for auto-renew policy renewals.");
 
             if (string.IsNullOrWhiteSpace(paymentReference))
                 return Result.Fail("payment.invalid_reference", "Payment reference is required.");
@@ -198,21 +219,31 @@ public sealed class Policy : AggregateRoot<Guid>
         return Result.Success();
     }
 
-    private decimal CalculateRefundAmount(DateOnly cancellationDate)
+    private Result<decimal> CalculateRefundAmount(DateOnly cancellationDate, PaymentMethod refundMethod)
     {
+        if (_payments.Count == 0)
+            return Result<decimal>.Fail("policy.payment.required", "A payment is required before cancellation.");
+
+        if (HasClaims)
+            return Result<decimal>.Success(0m);
+
+        var originalPaymentMethod = _payments.First().Type;
+        if (originalPaymentMethod != refundMethod)
+            return Result<decimal>.Fail("policy.refund.invalid_method", "Refund must be made to the original payment method.");
+
         if (cancellationDate < StartDate)
-            return Premium.Value;
+            return Result<decimal>.Success(Premium.Value);
 
         if (cancellationDate <= StartDate.AddDays(CoolingOffPeriodDays))
-            return Premium.Value;
+            return Result<decimal>.Success(Premium.Value);
 
         var totalCoverageDays = EndDate.DayNumber - StartDate.DayNumber;
         if (totalCoverageDays <= 0)
-            return 0m;
+            return Result<decimal>.Success(0m);
 
         var unusedDays = Math.Max(0, EndDate.DayNumber - cancellationDate.DayNumber);
         var proRata = Premium.Value * unusedDays / totalCoverageDays;
 
-        return decimal.Round(proRata, 2, MidpointRounding.AwayFromZero);
+        return Result<decimal>.Success(decimal.Round(proRata, 2, MidpointRounding.AwayFromZero));
     }
 }

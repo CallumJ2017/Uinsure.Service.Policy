@@ -1,6 +1,6 @@
 using Application.Dtos.Response;
-using Application.Models.Request;
-using Domain.Enums;
+using Application.Mappers;
+using Application.Models.Command;
 using Domain.Repository;
 using Domain.ValueObjects;
 using SharedKernel;
@@ -16,22 +16,63 @@ public class PolicyCancellationService : IPolicyCancellationService
         _policyRepository = policyRepository;
     }
 
-    public async Task<Result<CancelPolicyResponseDto>> CancelPolicyAsync(string policyReference, CancelPolicyRequestDto request)
+    public async Task<Result<CancelPolicyResponseDto>> CancelPolicyAsync(string policyReference, CancelPolicyCommand command)
     {
-        if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var refundMethod))
-            return Result<CancelPolicyResponseDto>.Fail("payment.invalid_type", "Payment type is invalid.");
+        var policyResult = await GetPolicy(policyReference);
+        if (!policyResult.IsSuccess)
+            return Result<CancelPolicyResponseDto>.Fail(policyResult.Error!.Code, policyResult.Error.Message);
 
-        var policy = await _policyRepository.GetByReferenceAsync(PolicyReference.FromString(policyReference));
+        var policy = policyResult.Value!;
 
-        if (policy is null)
-            return Result<CancelPolicyResponseDto>.Fail("policy.not_found", $"Policy with reference {policyReference} does not exist.");
-
-        var cancellationResult = policy.Cancel(request.CancellationDate, refundMethod);
+        var cancellationResult = policy.Cancel(command.CancellationDate, command.RefundMethod);
         if (!cancellationResult.IsSuccess)
             return Result<CancelPolicyResponseDto>.Fail(cancellationResult.Error!.Code, cancellationResult.Error.Message);
 
         await _policyRepository.SaveChangesAsync();
 
-        return Result<CancelPolicyResponseDto>.Success(new CancelPolicyResponseDto(policy.Reference.Value, cancellationResult.Value, refundMethod.ToString()));
+        return Result<CancelPolicyResponseDto>.Success(
+            new CancelPolicyResponseDto(policy.Reference.Value, cancellationResult.Value, command.RefundMethod.ToString()));
+    }
+
+    public async Task<Result<CancelPolicyResponseDto>> GetCancellationQuoteAsync(string policyReference, CancelPolicyCommand command)
+    {
+        var policyResult = await GetPolicy(policyReference);
+        if (!policyResult.IsSuccess)
+            return Result<CancelPolicyResponseDto>.Fail(policyResult.Error!.Code, policyResult.Error.Message);
+
+        var policy = policyResult.Value!;
+
+        var quoteResult = policy.CalculateCancellationQuote(command.CancellationDate, command.RefundMethod);
+        if (!quoteResult.IsSuccess)
+            return Result<CancelPolicyResponseDto>.Fail(quoteResult.Error!.Code, quoteResult.Error.Message);
+
+        return Result<CancelPolicyResponseDto>.Success(
+            new CancelPolicyResponseDto(policy.Reference.Value, quoteResult.Value, command.RefundMethod.ToString()));
+    }
+
+    public async Task<Result<PolicyDto>> MarkAsClaimAsync(string policyReference)
+    {
+        var policyResult = await GetPolicy(policyReference);
+        if (!policyResult.IsSuccess)
+            return Result<PolicyDto>.Fail(policyResult.Error!.Code, policyResult.Error.Message);
+
+        var policy = policyResult.Value!;
+        var markResult = policy.MarkAsClaim();
+        if (!markResult.IsSuccess)
+            return Result<PolicyDto>.Fail(markResult.Error!.Code, markResult.Error.Message);
+
+        await _policyRepository.SaveChangesAsync();
+
+        return Result<PolicyDto>.Success(policy.ToDto());
+    }
+
+    private async Task<Result<Domain.Aggregates.Policy>> GetPolicy(string policyReference)
+    {
+        var policy = await _policyRepository.GetByReferenceAsync(PolicyReference.FromString(policyReference));
+
+        if (policy is null)
+            return Result<Domain.Aggregates.Policy>.Fail("policy.not_found", $"Policy with reference {policyReference} does not exist.");
+
+        return Result<Domain.Aggregates.Policy>.Success(policy);
     }
 }

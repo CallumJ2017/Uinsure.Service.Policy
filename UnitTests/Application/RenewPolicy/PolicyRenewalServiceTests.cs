@@ -1,5 +1,4 @@
-using Application.Dtos;
-using Application.Models.Request;
+using Application.Models.Command;
 using Application.Services.RenewPolicy;
 using Domain.Aggregates;
 using Domain.Enums;
@@ -22,39 +21,13 @@ public class PolicyRenewalServiceTests
 
         var sut = new PolicyRenewalService(repository.Object);
 
-        var result = await sut.RenewPolicyAsync("HOM-0000001", new RenewPolicyRequestDto
+        var result = await sut.RenewPolicyAsync("HOM-0000001", new RenewPolicyCommand
         {
             RenewalDate = DateOnly.FromDateTime(DateTime.UtcNow)
         });
 
         result.IsSuccess.Should().BeFalse();
         result.Error!.Code.Should().Be("policy.not_found");
-    }
-
-    [Fact]
-    public async Task RenewPolicyAsync_ShouldFail_WhenPaymentMethodIsInvalid()
-    {
-        var policy = BuildActivePolicy(autoRenew: true);
-        var repository = new Mock<IPolicyRepository>();
-        repository
-            .Setup(x => x.GetByReferenceAsync(It.IsAny<PolicyReference>()))
-            .ReturnsAsync(policy);
-
-        var sut = new PolicyRenewalService(repository.Object);
-
-        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyRequestDto
-        {
-            RenewalDate = policy.EndDate.AddDays(-5),
-            Payment = new PaymentDto
-            {
-                Reference = "PAY-RENEW-001",
-                PaymentMethod = "Invalid",
-                Amount = 100m
-            }
-        });
-
-        result.IsSuccess.Should().BeFalse();
-        result.Error!.Code.Should().Be("payment.invalid_type");
     }
 
     [Fact]
@@ -70,15 +43,12 @@ public class PolicyRenewalServiceTests
 
         var sut = new PolicyRenewalService(repository.Object);
 
-        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyRequestDto
+        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyCommand
         {
             RenewalDate = policy.EndDate.AddDays(-5),
-            Payment = new PaymentDto
-            {
-                Reference = "PAY-RENEW-002",
-                PaymentMethod = "Card",
-                Amount = 77.77m
-            }
+            PaymentReference = "PAY-RENEW-002",
+            PaymentMethod = PaymentMethod.Card,
+            PaymentAmount = 77.77m
         });
 
         result.IsSuccess.Should().BeTrue();
@@ -101,21 +71,42 @@ public class PolicyRenewalServiceTests
 
         var sut = new PolicyRenewalService(repository.Object);
 
-        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyRequestDto
+        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyCommand
         {
             RenewalDate = policy.EndDate.AddDays(-5),
-            Payment = new PaymentDto
-            {
-                Reference = "PAY-RENEW-003",
-                PaymentMethod = "Card",
-                Amount = 120m
-            }
+            PaymentReference = "PAY-RENEW-003",
+            PaymentMethod = PaymentMethod.Card,
+            PaymentAmount = 120m
         });
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Policy.EndDate.Should().Be(originalEndDate.AddYears(1));
         result.Value.Policy.Payments.Should().HaveCount(originalPaymentCount);
         repository.Verify(x => x.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task RenewPolicyAsync_ShouldFail_WhenAutoRenewTrueAndPaymentMethodIsCheque()
+    {
+        var policy = BuildActivePolicy(autoRenew: true);
+        var repository = new Mock<IPolicyRepository>();
+        repository
+            .Setup(x => x.GetByReferenceAsync(It.IsAny<PolicyReference>()))
+            .ReturnsAsync(policy);
+
+        var sut = new PolicyRenewalService(repository.Object);
+
+        var result = await sut.RenewPolicyAsync(policy.Reference.Value, new RenewPolicyCommand
+        {
+            RenewalDate = policy.EndDate.AddDays(-5),
+            PaymentReference = "PAY-RENEW-004",
+            PaymentMethod = PaymentMethod.Cheque,
+            PaymentAmount = 120m
+        });
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.renewal.cheque_not_allowed");
+        repository.Verify(x => x.SaveChangesAsync(), Times.Never);
     }
 
     private static Policy BuildActivePolicy(bool autoRenew)

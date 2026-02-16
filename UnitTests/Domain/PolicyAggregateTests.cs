@@ -345,6 +345,33 @@ public class PolicyAggregateTests
     }
 
     [Fact]
+    public void CalculateCancellationQuote_ShouldReturnRefundWithoutCancellingPolicy()
+    {
+        var startDate = Today.AddDays(-20);
+        var premium = Money.Create(365m);
+        var policy = CreateActivePolicy(startDate, premium, PaymentMethod.Card);
+        var cancellationDate = startDate.AddDays(16);
+
+        var quote = policy.CalculateCancellationQuote(cancellationDate, PaymentMethod.Card);
+
+        quote.IsSuccess.Should().BeTrue();
+        quote.Value.Should().BeLessThan(premium.Value);
+        policy.Status.Should().Be(PolicyStatus.Active);
+    }
+
+    [Fact]
+    public void Cancel_ShouldReturnZeroRefund_WhenPolicyHasClaims()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-40), Money.Create(300m), PaymentMethod.Card);
+        policy.MarkAsClaim().IsSuccess.Should().BeTrue();
+
+        var result = policy.Cancel(Today, PaymentMethod.DirectDebit);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0m);
+    }
+
+    [Fact]
     public void Renew_ShouldFail_WhenEarlierThan30DaysBeforeEndDate()
     {
         var policy = CreateActivePolicy(Today.AddDays(-120), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
@@ -408,6 +435,17 @@ public class PolicyAggregateTests
 
         result.IsSuccess.Should().BeFalse();
         result.Error!.Code.Should().Be("policy.renewal.payment.required");
+    }
+
+    [Fact]
+    public void Renew_ShouldFail_WhenAutoRenewIsTrueAndPaymentMethodIsCheque()
+    {
+        var policy = CreateActivePolicy(Today.AddDays(-360), Money.Create(365m), PaymentMethod.Card, autoRenew: true);
+
+        var result = policy.Renew(policy.EndDate.AddDays(-5), "PAY-RENEW-005", PaymentMethod.Cheque, 12m);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error!.Code.Should().Be("policy.renewal.cheque_not_allowed");
     }
 
     private Policy CreateActivePolicy(DateOnly startDate, Money premium, PaymentMethod paymentMethod, bool autoRenew = true)

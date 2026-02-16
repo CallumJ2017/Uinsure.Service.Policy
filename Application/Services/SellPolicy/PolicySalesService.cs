@@ -1,5 +1,5 @@
-﻿using Application.Dtos.Response;
-using Application.Models.Request;
+using Application.Dtos.Response;
+using Application.Models.Command;
 using Domain.Aggregates;
 using Domain.Entities;
 using Domain.Enums;
@@ -18,18 +18,24 @@ public class PolicySalesService : IPolicySalesService
         _policyRepository = policyRepository;
     }
 
-    public async Task<Result<SellPolicyResponseDto>> SellPolicyAsync(SellPolicyRequestDto request)
+    public async Task<Result<SellPolicyResponseDto>> SellPolicyAsync(SellPolicyCommand command)
     {
-        var policyResult = Policy.CreateNew(Enum.Parse<HomeInsuranceType>(request.InsuranceType), request.StartDate, Money.Create(request.Amount), request.Property.AddressLine1, request.Property.Postcode, request.AutoRenew);
+        var policyResult = Policy.CreateNew(
+            command.InsuranceType,
+            command.StartDate,
+            Money.Create(command.Amount),
+            command.Property.AddressLine1,
+            command.Property.Postcode,
+            command.AutoRenew);
 
         if (!policyResult.IsSuccess)
             return Result<SellPolicyResponseDto>.Fail(policyResult.Error.Code, policyResult.Error.Message);
 
         var policy = policyResult.Value!;
 
-        List<Policyholder> policyHolders = new();
+        List<Policyholder> policyHolders = [];
 
-        foreach (var holder in request.Policyholders)
+        foreach (var holder in command.Policyholders)
         {
             var policyHolderResult = policy.AddPolicyHolder(holder.FirstName, holder.LastName, holder.DateOfBirth);
 
@@ -37,12 +43,12 @@ public class PolicySalesService : IPolicySalesService
                 return Result<SellPolicyResponseDto>.Fail(policyHolderResult.Error.Code, policyHolderResult.Error.Message);
         }
 
-        if (request.Payment is not null)
+        if (command.Payment is not null)
         {
-            if (!Enum.TryParse<PaymentMethod>(request.Payment.PaymentMethod, ignoreCase: true, out var paymentMethod))
+            if (!Enum.TryParse<PaymentMethod>(command.Payment.PaymentMethod, ignoreCase: true, out var paymentMethod))
                 return Result<SellPolicyResponseDto>.Fail("payment.invalid_type", "Payment type is invalid.");
 
-            var paymentResult = policy.AddPayment(request.Payment.Reference, paymentMethod, request.Payment.Amount);
+            var paymentResult = policy.AddPayment(command.Payment.Reference, paymentMethod, command.Payment.Amount);
             if (!paymentResult.IsSuccess)
                 return Result<SellPolicyResponseDto>.Fail(paymentResult.Error.Code, paymentResult.Error.Message);
         }
